@@ -1,0 +1,31 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+
+my $color = "green";
+my $text;
+
+open FH, "/proc/sys/kernel/random/entropy_avail" or die $!;
+while (<FH>)
+{
+  chomp;
+  #if ($_ < 512)
+  #{ $color = "red"; }
+  #elsif ($_ < 1024)
+  # { $color = "yellow"; }
+  $text = "entropy: $_ &$color\n";
+}
+close FH;
+
+chomp (my $hn = `hostname -f`);
+chomp (my $date = `date`);
+$text = "status $hn.entropy $color $date
+
+$text
+";
+
+
+`/usr/lib/xymon/client/bin/xymon hedwig.dsrw.org "$text"`;
+#print $text;

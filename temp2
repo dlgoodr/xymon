@@ -1,0 +1,66 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Module::Load::Conditional qw(can_load);
+
+
+my $color = "green";
+my $text;
+
+open FH, "sensors coretemp-* -A|" or die $!;
+while (<FH>)
+{
+  next unless m/:/;
+  chomp;
+  (my $name,undef) = split /:/;
+  s/^$name:\s*\+//;
+  (my $temp) = ($_ =~ m/^([\d\.]+)/);
+  $text .= "$name: $temp";
+  if ($color ne "red" and m/high = \+([\d\.]+)/)
+  {
+    if ($temp > $1 )
+    {
+      $color = "yellow";
+      $text .= " &yellow";
+    }
+  }
+  if ($color ne "red" and m/crit = \+([\d\.]+)/)
+  {
+    if ($temp > $1)
+    {
+      $color = "red";
+      $text .= " &red";
+    }
+  }
+  $text .= "\n";
+}
+close FH;
+
+if (can_load( modules => { 'XML::Simple' => 0 },autoload => 1) and -x "/usr/bin/nvidia-smi")
+{
+  my $out = `/usr/bin/sudo /usr/bin/nvidia-smi -q -x`;
+  my $nvidia = XMLin($out);
+  my $temp = $nvidia->{gpu}->{temperature}->{gpu_temp};
+  my ($digits) = $temp =~ /(\d+)/;
+  if ($digits >= 60)
+   { $color = "red"; }
+  if ($color eq "green" and $digits > 55 and $digits < 60)
+   { $color = "yellow"; }
+  $text .= "nvidia: $temp &" . $color . "\n";
+}
+
+if (-x "/usr/sbin/hddtemp")
+ { $text .= `/usr/bin/sudo /usr/sbin/hddtemp  /dev/[sw]d[a-z]|sed -e 's/°C/ /g'|cut -d/ -f3|cut -d: -f1,3`;}
+
+
+chomp (my $hn = `hostname -f`);
+chomp (my $date = `date`);
+$text = "status $hn.temp2 $color $date
+
+$text
+";
+
+
+`/usr/lib/xymon/client/bin/xymon hedwig.dsrw.org "$text"`;
+#print $text;

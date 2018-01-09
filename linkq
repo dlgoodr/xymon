@@ -1,0 +1,22 @@
+#!/bin/bash
+
+for iw in `iwconfig 2>/dev/null |awk '/^[^\ ]/ {print $1}'`; do
+  ap=`iwconfig $iw | grep "Access Point" | sed -Ee 's/^.+Access Point: (.+)\s.*$/\1/'|awk '{print $1}'`
+  q=$((`sudo /sbin/iwconfig $iw |awk -F = '/Quality/ {print $2}'|awk '{print $1}'|sed -e 's|/| * 100 / |'`))
+  if [[ ( $ap != "Not-Associated" ) && ( "x$q" != "x" ) ]]; then
+    if [[ $q -ge 65 ]]; then
+      color="green"
+    elif  [[ $q -ge 40 ]]; then
+      color="yellow"
+    else
+      color="red"
+    fi
+    status="$status
+$iw: $q &$color"
+  fi
+done
+
+$XYMON $XYMSRV "status $MACHINE.linkq $color `date`
+$status
+"
+echo $status
