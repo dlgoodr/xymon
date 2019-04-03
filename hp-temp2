@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Module::Load::Conditional qw(can_load);
+
+
+my $color = "green";
+my $text;
+my $section="x";
+my $pattern = "coretemp-*";
+
+if (-x "/sbin/hplog")
+{
+  open FH, "sudo /sbin/hplog -t|grep -v ^ID|" or die $!;
+  while (<FH>)
+  {
+    my $linecolor = " ";
+    chomp;
+    next unless $_;
+    my @line = unpack("A2xxA12xA15xA8xA3xxA3xxA3xxA3",$_);
+    if ($line[5] ne "---")
+    {
+      if ($line[3] !~ /Normal/ or $line[5] > $line[7])
+      {
+	$color = "red";
+        $linecolor = "&red";
+      }
+      $text .= sprintf "%s_%d: %dC%s\n",$line[2], $line[0], $line[5],$linecolor;
+    }
+  }
+  close FH;
+}
+else
+{
+  open FH, "sensors $pattern -A|" or die $!;
+  while (<FH>)
+  {
+
+
+    chomp;
+    if (m/$pattern/)
+     { $section = $_; }
+    next unless m/:/;
+    (my $name,undef) = split /:/;
+    s/^$name:\s*\+//;
+    (my $temp) = ($_ =~ m/^([\d\.]+)/);
+    $text .= "${section}_$name: $temp";
+    if ($color ne "red" and m/high = \+([\d\.]+)/)
+    {
+      if ($temp > $1 )
+      {
+	$color = "yellow";
+	$text .= " &yellow";
+      }
+    }
+    if ($color ne "red" and m/crit = \+([\d\.]+)/)
+    {
+      if ($temp > $1)
+      {
+	$color = "red";
+	$text .= " &red";
+      }
+    }
+    $text .= "\n";
+  }
+  close FH;
+}
+if (can_load( modules => { 'XML::Simple' => 0 },autoload => 1) and -x "/usr/bin/nvidia-smi")
+{
+  my $out = `/usr/bin/sudo /usr/bin/nvidia-smi -q -x`;
+  my $nvidia = XMLin($out);
+  my $temp = $nvidia->{gpu}->{temperature}->{gpu_temp};
+  my ($digits) = $temp =~ /(\d+)/;
+  if ($digits >= 60)
+   { $color = "red"; }
+  if ($color eq "green" and $digits > 55 and $digits < 60)
+   { $color = "yellow"; }
+  $text .= "nvidia: $temp &" . $color . "\n";
+}
+
+if (-x "/usr/sbin/hddtemp")
+ { $text .= `/usr/bin/sudo /usr/sbin/hddtemp  /dev/[sw]d[a-z]|sed -e 's/°/ /g'|cut -d/ -f3|cut -d: -f1,3`; }
+
+    
+    
+
+chomp (my $hn = `hostname -f`);
+chomp (my $date = `date`);
+$text = "status $hn.temp2 $color $date
+
+$text
+";
+
+
+`/usr/lib/xymon/client/bin/xymon hedwig.dsrw.org "$text"`;
+#print $text;
